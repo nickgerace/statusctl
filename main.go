@@ -20,6 +20,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"path/filepath"
 )
 
 // Config struct for yaml files. Only look for collections of git repositories and individual git
@@ -43,7 +44,8 @@ var listCmd = &cobra.Command{
 	Short: "A brief description of your command",
 	Long:  "Multi-line description here",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Yo")
+		checkConfigExists()
+		listItems()
 	},
 }
 
@@ -53,8 +55,8 @@ var runCmd = &cobra.Command{
 	Short: "A brief description of your command",
 	Long:  "Multi-line description here",
 	Run: func(cmd *cobra.Command, args []string) {
-		config := Config{}
-		config.load()
+		checkConfigExists()
+		runConfig()
 	},
 }
 
@@ -83,6 +85,35 @@ func checkConfigExists() bool {
 	return true
 }
 
+// FIXME: temporary function to handle based on the config file's existence.
+func handlesConfigExists(input bool) {
+	if !input {
+		log.Printf("Config files does not exist.")
+		os.Exit(1)
+	}
+}
+
+// TODO: Create function that creates config YAML if it does not exist.
+
+// List all items in the current config.
+func listItems() {
+
+	// Load YAML file into config struct.
+	config := Config{}
+	config.load()
+
+	// Perform the listing of the YAML contents.
+	fmt.Printf("\ncollections:\n")
+	for _, collection := range config.Collections {
+		fmt.Printf("  %s\n", collection)
+	}
+	fmt.Printf("\nrepositories:\n")
+	for _, repository := range config.Repositories {
+		fmt.Printf("  %s\n", repository)
+	}
+	fmt.Printf("\n")
+}
+
 // With a slice of repositories, print the status of each repository using the go-git library.
 func printStatus(repos []string) {
 
@@ -100,9 +131,10 @@ func printStatus(repos []string) {
 		// Open the repository with a given path. This not only fails if the path does not exist,
 		// but also if the path is not a valid (git) repository. Before that, we will use the
 		// absolute path.
-		repoPath, err = path.filepath.Abs(repoPath)
+		repoPath, err := filepath.Abs(repoPath)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Printf("  %s%s: %v\n", results[3], repoPath, err)
+			return
 		}
 		GitRepo, err := git.PlainOpen(repoPath)
 		if err != nil {
@@ -133,9 +165,33 @@ func printStatus(repos []string) {
 	}
 }
 
+// Primary run command. Wrapper around printStatus.
+func runConfig() {
+	config := Config{}
+	config.load()
+
+	fmt.Printf("\ncollections:\n")
+	for _, collection := range config.Collections {
+		collectionSubDirs, err := ioutil.ReadDir(collection)
+		if err != nil {
+			log.Fatal(err)
+		}
+		collectionRepoPaths := []string{}
+		for _, repoName := range collectionSubDirs {
+			collectionRepoPaths = append(collectionRepoPaths, path.Join(collection, repoName.Name()))
+		}
+		printStatus(collectionRepoPaths)
+	}
+
+	fmt.Printf("\nrepositories:\n")
+	printStatus(config.Repositories)
+	fmt.Printf("\n")
+}
+
 // Setup all subcommands.
 func init() {
 	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(runCmd)
 }
 
 // Execute the root Cobra command.
