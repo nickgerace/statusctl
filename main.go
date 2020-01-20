@@ -17,7 +17,6 @@ import (
 	git "gopkg.in/src-d/go-git.v4"
 	yaml "gopkg.in/yaml.v3"
 	"io/ioutil"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -31,10 +30,11 @@ type Config struct {
 	Repositories []string `yaml:"repositories,omitempty"`
 }
 
-// This is the base command, "statusctl", when called without any subcommands.
+// This is the base command, "statusctnl", when called without any subcommands.
+// TODO: command descriptions
 var rootCmd = &cobra.Command{
 	Use:   "statusctl",
-	Short: "A brief description of your application",
+	Short: "Status ctl keeps track of ",
 	Long:  "Multi-line description here",
 }
 
@@ -44,8 +44,7 @@ var listCmd = &cobra.Command{
 	Short: "A brief description of your command",
 	Long:  "Multi-line description here",
 	Run: func(cmd *cobra.Command, args []string) {
-		checkConfigExists()
-		listItems()
+		listAction()
 	},
 }
 
@@ -55,8 +54,7 @@ var runCmd = &cobra.Command{
 	Short: "A brief description of your command",
 	Long:  "Multi-line description here",
 	Run: func(cmd *cobra.Command, args []string) {
-		checkConfigExists()
-		runConfig()
+		runAction()
 	},
 }
 
@@ -66,52 +64,39 @@ func (config *Config) load() {
 
 	// Load the config file contents into bytestream.
 	data, err := ioutil.ReadFile(path.Join(os.Getenv("HOME"), ".config", "statusctl", "config.yaml"))
-	if err != nil {
-		log.Fatal(err)
-	}
+	handle(err)
 
 	// Unmarshall the raw string into the config struct.
 	err = yaml.Unmarshal(data, &config)
+	handle(err)
+}
+
+// Handles errors efficiently in one line.
+func handle(err error) {
 	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-// Checks if the config file exists and returns the result.
-func checkConfigExists() bool {
-	if _, err := os.Stat(path.Join(os.Getenv("HOME"), ".config", "statusctl", "config.yaml")); err != nil {
-		return false
-	}
-	return true
-}
-
-// FIXME: temporary function to handle based on the config file's existence.
-func handlesConfigExists(input bool) {
-	if !input {
-		log.Printf("Config files does not exist.")
+		fmt.Println(err)
 		os.Exit(1)
 	}
 }
 
-// TODO: Create function that creates config YAML if it does not exist.
+// Checks if the config file exists and returns the result.
+func createConfigIfNotExist() {
 
-// List all items in the current config.
-func listItems() {
+	// Declare the config directory path.
+	configDirectory := path.Join(os.Getenv("HOME"), ".config", "statusctl")
 
-	// Load YAML file into config struct.
-	config := Config{}
-	config.load()
+	// If the config file does not exist, create the file.
+	if _, err := os.Stat(path.Join(configDirectory, "config.yaml")); err != nil {
 
-	// Perform the listing of the YAML contents.
-	fmt.Printf("\ncollections:\n")
-	for _, collection := range config.Collections {
-		fmt.Printf("  %s\n", collection)
+		// First, create the nested directories to the file.
+		err = os.MkdirAll(configDirectory, os.ModePerm)
+		handle(err)
+
+		// Second, create the file and exit.
+		_, err = os.Create(path.Join(configDirectory, "config.yaml"))
+		handle(err)
+		os.Exit(0)
 	}
-	fmt.Printf("\nrepositories:\n")
-	for _, repository := range config.Repositories {
-		fmt.Printf("  %s\n", repository)
-	}
-	fmt.Printf("\n")
 }
 
 // With a slice of repositories, print the status of each repository using the go-git library.
@@ -165,26 +150,67 @@ func printStatus(repos []string) {
 	}
 }
 
-// Primary run command. Wrapper around printStatus.
-func runConfig() {
+// This is the primary function for the run command. It iterates through all the collections and
+// then gets the absolute paths of all the sub directories in each collection. Those paths are
+// fed into "printStatus" as a slice. Then, the individual repositories are fed directory into
+// "printStatus".
+func runAction() {
+
+	// Create config file (and exit) if it does not exist.
+	createConfigIfNotExist()
+
+	// Load YAML file into config struct.
 	config := Config{}
 	config.load()
 
+	// Iterates through all collections and get their paths.
 	fmt.Printf("\ncollections:\n")
 	for _, collection := range config.Collections {
+
+		// Get all subdirectories in the collection.
 		collectionSubDirs, err := ioutil.ReadDir(collection)
-		if err != nil {
-			log.Fatal(err)
+		handle(err)
+
+		// Iterate through the subdirectories in the collection.
+		for count, subDir := range collectionSubDirs {
+
+			// Get the absolute path of the sub directory.
+			subDir, err = filepath.Abs(path.Join(collection, subDir.Name()))
+			handle(err)
+
+			// Replace the subdirectory name with the absolute path of the subdirectory.
+			collectionSubDirs[count] = subDir
 		}
-		collectionRepoPaths := []string{}
-		for _, repoName := range collectionSubDirs {
-			collectionRepoPaths = append(collectionRepoPaths, path.Join(collection, repoName.Name()))
-		}
-		printStatus(collectionRepoPaths)
+
+		// Now that we have the absolute paths, feed them into "printStatus".
+		printStatus(collectionSubDirs)
 	}
 
+	// Feed all individual repositories into "printStatus".
 	fmt.Printf("\nrepositories:\n")
 	printStatus(config.Repositories)
+	fmt.Printf("\n")
+}
+
+// List all items in the current config.
+func listAction() {
+
+	// Create config file (and exit) if it does not exist.
+	createConfigIfNotExist()
+
+	// Load YAML file into config struct.
+	config := Config{}
+	config.load()
+
+	// Perform the listing of the YAML contents.
+	fmt.Printf("\ncollections:\n")
+	for _, collection := range config.Collections {
+		fmt.Printf("  %s\n", collection)
+	}
+	fmt.Printf("\nrepositories:\n")
+	for _, repository := range config.Repositories {
+		fmt.Printf("  %s\n", repository)
+	}
 	fmt.Printf("\n")
 }
 
@@ -197,6 +223,7 @@ func init() {
 // Execute the root Cobra command.
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		os.Exit(1)
 	}
 }
