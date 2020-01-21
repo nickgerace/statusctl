@@ -1,6 +1,6 @@
 steps:
   - uses: actions/checkout@master
-  - uses: actions/checkout@dev
+  - uses: actions/setup-go@v1
     with:
       go-version: '1.13'
   - run: go run main.go

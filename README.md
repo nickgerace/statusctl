@@ -22,6 +22,10 @@ This tool is being tested and is considered use at your own risk until it reache
 There will be further instructions to come.
 For now, you can get started by executing the following commands.
 
+```bash
+make build install
+```
+
 The "install" target builds the binary and moves it to your */usr/local/bin* directory.
 Moving the binary may require root (sudo) access.
 

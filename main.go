@@ -22,27 +22,30 @@ import (
 	"path/filepath"
 )
 
-// Config struct for yaml files. Only look for collections of git repositories and individual git
-// repositories. The "omitempty" option enables the results to be in a line-by-line list rather
-// than an inline array. This is done for readability.
-type Config struct {
-	Collections  []string `yaml:"collections,omitempty"`
-	Repositories []string `yaml:"repositories,omitempty"`
-}
-
-// This is the base command, "statusctnl", when called without any subcommands.
-// TODO: command descriptions
+// This is the base command, "statusctl", when called without any subcommands.
 var rootCmd = &cobra.Command{
 	Use:   "statusctl",
-	Short: "Status ctl keeps track of ",
-	Long:  "Multi-line description here",
+	Short: "CLI tool to keep track of your Git repositories.",
+	Long: `
+CLI tool to keep track of your Git repositories.
+
+It leverages the configuration YAML file ($HOME/.config/statusctl/config.yaml) in order to know
+which repositories to target.
+
+The file is split into "collections" and "repositories", containing arrays of paths. Each entry in
+"collections" is a path to a collection of Git repositories. Each entry in "repositories" is a
+path to an individual Git repository.`,
 }
 
 // List all targets to check status against.
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "A brief description of your command",
-	Long:  "Multi-line description here",
+	Short: "This subcommand lists the contents of the configuration file.",
+	Long: `
+This subcommand lists the contents of the configuration file ($HOME/.config/statusctl/config.yaml).
+
+It loads the file contents into the struct for validation. Then, the struct contents are displayed
+to screen.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		listAction()
 	},
@@ -51,27 +54,35 @@ var listCmd = &cobra.Command{
 // Run againsts all targets in the config YAML file.
 var runCmd = &cobra.Command{
 	Use:   "run",
-	Short: "A brief description of your command",
-	Long:  "Multi-line description here",
+	Short: "This subcommand starts the primary program: checking Git status for all targets.",
+	Long: `
+This subcommand starts the primary program: checking Git status for all targets.
+	
+It looks for the configuration file ($HOME/.config/statusctl/config.yaml) and runs against it.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runAction()
 	},
 }
 
-// Open the file and load the config in to the struct for usage. We need a pointer to the config
-// object to store the unmarhsaled data. The config file can only be in one location.
-func (config *Config) load() {
+// Config struct for yaml files. Only look for collections of Git repositories and individual Git
+// repositories. The "omitempty" option allows for the objects to be empty.
+type Config struct {
+	Collections  []string `yaml:"collections,omitempty"`
+	Repositories []string `yaml:"repositories,omitempty"`
+}
 
-	// Load the config file contents into bytestream.
+// Open the file and load the config into the struct for usage. We need a pointer to the config
+// object to store the unmarhsaled data. The config file can only be in one location. First, we
+// load the config file contents into bytestream. Then, we unmarshall the raw data into the
+// config struct.
+func (config *Config) load() {
 	data, err := ioutil.ReadFile(path.Join(os.Getenv("HOME"), ".config", "statusctl", "config.yaml"))
 	handle(err)
-
-	// Unmarshall the raw string into the config struct.
 	err = yaml.Unmarshal(data, &config)
 	handle(err)
 }
 
-// Handles errors efficiently in one line.
+// Handles errors efficiently in one line. Exit with status code "1" after the error is displayed.
 func handle(err error) {
 	if err != nil {
 		fmt.Println(err)
@@ -79,43 +90,53 @@ func handle(err error) {
 	}
 }
 
-// Checks if the config file exists and returns the result.
+// Checks if the config file exists and returns the result. We use the directory path as well as
+// the config file path in order to create the file if it does not exist, create the nested
+// directories if they do not exist, and exit afterwards.
 func createConfigIfNotExist() {
-
-	// Declare the config directory path.
 	configDirectory := path.Join(os.Getenv("HOME"), ".config", "statusctl")
-
-	// If the config file does not exist, create the file.
 	if _, err := os.Stat(path.Join(configDirectory, "config.yaml")); err != nil {
-
-		// First, create the nested directories to the file.
 		err = os.MkdirAll(configDirectory, os.ModePerm)
 		handle(err)
-
-		// Second, create the file and exit.
 		_, err = os.Create(path.Join(configDirectory, "config.yaml"))
 		handle(err)
 		os.Exit(0)
 	}
 }
 
-// With a slice of repositories, print the status of each repository using the go-git library.
-func printStatus(repos []string) {
+// List all items in the current config. This function starts by creating the config file (and
+// exit) if it does not exist. Then, it loads the YAML file into a config struct. Finally, it
+// prints all config contents to STDOUT.
+func listAction() {
+	createConfigIfNotExist()
+	config := Config{}
+	config.load()
+	fmt.Printf("\ncollections:\n")
+	for _, collection := range config.Collections {
+		fmt.Printf("  %s\n", collection)
+	}
+	fmt.Printf("\nrepositories:\n")
+	for _, repository := range config.Repositories {
+		fmt.Printf("  %s\n", repository)
+	}
+	fmt.Printf("\n")
+}
 
-	// Types of results and formatted output.
+// With a slice of repositories, print the status of each repository using the go-git library.
+// Using an array of STDOUT options, iterate through the slice of repositories, and open the
+// repository with a given path (transformed to absolute path). This will not only fail if the
+// path does not exist, but also if the path is not a valid (Git) repository. The "IsClean"
+// function requires creating a "worktree" object, and then a "status" object. If either function
+// fails, the error is unknown since the previous function should have caught most known errors.
+// Finally, we will utilize the result (bool) to determine whether or not the repository is clean.
+func printStatus(repos []string) {
 	results := [4]string{
 		"CLEAN    ",
 		"UNCLEAN  ",
 		"ERROR    ",
 		"UNKNOWN  ",
 	}
-
-	// Iterate through the slice of repositories.
 	for _, repoPath := range repos {
-
-		// Open the repository with a given path. This not only fails if the path does not exist,
-		// but also if the path is not a valid (git) repository. Before that, we will use the
-		// absolute path.
 		repoPath, err := filepath.Abs(repoPath)
 		if err != nil {
 			fmt.Printf("  %s%s: %v\n", results[3], repoPath, err)
@@ -126,10 +147,6 @@ func printStatus(repos []string) {
 			fmt.Printf("  %s%s\n", results[2], repoPath)
 			return
 		}
-
-		// The "IsClean" function requires creating a "worktree" object, and then a "status"
-		// object. If either function fails, the error is unknown since the previous function
-		// should have caught most known errors.
 		GitWorktree, err := GitRepo.Worktree()
 		if err != nil {
 			fmt.Printf("  %s%s: %v\n", results[3], repoPath, err)
@@ -140,8 +157,6 @@ func printStatus(repos []string) {
 			fmt.Printf("  %s%s: %v\n", results[3], repoPath, err)
 			return
 		}
-
-		// Utilize the result (bool) to provide whether or not the repository is clean.
 		if GitStatus.IsClean() {
 			fmt.Printf("  %s%s\n", results[0], repoPath)
 		} else {
@@ -150,67 +165,32 @@ func printStatus(repos []string) {
 	}
 }
 
-// This is the primary function for the run command. It iterates through all the collections and
-// then gets the absolute paths of all the sub directories in each collection. Those paths are
-// fed into "printStatus" as a slice. Then, the individual repositories are fed directory into
-// "printStatus".
+// This is the primary function for the run command. First, this function creates the config file
+// (and exits) if it does not exist. Then, it loads the YAML file into the config struct. We
+// iterate through all collections and get their paths; subsequently getting all subdirectories
+// for each collection. For each subdirectory in a collection, this function gets the absolute
+// path of the subdirectory and adds that path to a temporary slice. After this is done for every
+// subdirectory, this function feeds the completed slice into "printStatus". Finally, all the
+// individual repositories are fed directly into "printStatus".
 func runAction() {
-
-	// Create config file (and exit) if it does not exist.
 	createConfigIfNotExist()
-
-	// Load YAML file into config struct.
 	config := Config{}
 	config.load()
-
-	// Iterates through all collections and get their paths.
 	fmt.Printf("\ncollections:\n")
 	for _, collection := range config.Collections {
-
-		// Get all subdirectories in the collection.
 		collectionSubDirs, err := ioutil.ReadDir(collection)
 		handle(err)
-
-		// Iterate through the subdirectories in the collection.
-		for count, subDir := range collectionSubDirs {
-
-			// Get the absolute path of the sub directory.
-			subDir, err = filepath.Abs(path.Join(collection, subDir.Name()))
+		subDirPaths := []string{}
+		for _, subDir := range collectionSubDirs {
+			subDirPath := path.Join(collection, subDir.Name())
+			subDirPath, err = filepath.Abs(subDirPath)
 			handle(err)
-
-			// Replace the subdirectory name with the absolute path of the subdirectory.
-			collectionSubDirs[count] = subDir
+			subDirPaths = append(subDirPaths, subDirPath)
 		}
-
-		// Now that we have the absolute paths, feed them into "printStatus".
-		printStatus(collectionSubDirs)
+		printStatus(subDirPaths)
 	}
-
-	// Feed all individual repositories into "printStatus".
 	fmt.Printf("\nrepositories:\n")
 	printStatus(config.Repositories)
-	fmt.Printf("\n")
-}
-
-// List all items in the current config.
-func listAction() {
-
-	// Create config file (and exit) if it does not exist.
-	createConfigIfNotExist()
-
-	// Load YAML file into config struct.
-	config := Config{}
-	config.load()
-
-	// Perform the listing of the YAML contents.
-	fmt.Printf("\ncollections:\n")
-	for _, collection := range config.Collections {
-		fmt.Printf("  %s\n", collection)
-	}
-	fmt.Printf("\nrepositories:\n")
-	for _, repository := range config.Repositories {
-		fmt.Printf("  %s\n", repository)
-	}
 	fmt.Printf("\n")
 }
 
