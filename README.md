@@ -31,12 +31,6 @@ Moving the binary may require root (sudo) access.
 
 After building and moving the binary, you can safely remove the repository.
 
-```bash
-git clone --depth=1 https://github.com/nickgerace/statusctl.git
-make -f statusctl/Makefile install
-rm -ri statusctl
-```
-
 ## Usage
 
 Execute without any arguments or flags to get started!
@@ -47,11 +41,15 @@ statusctl
 
 ## Uninstallation
 
+**Option 1: Automatic**
+
 If you still have this repository cloned, you can use the uninstall target.
 
 ```bash
 make uninstall
 ```
+
+**Option 2: Manual**
 
 Otherwise, remove the generated, configuration file and directory..
 
