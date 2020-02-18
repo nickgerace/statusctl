@@ -4,6 +4,9 @@ NAME:=statusctl
 help:
 	@echo View the Makefile targets for usage.
 
+final: tidy test run
+	-rm $(MAKEPATH)/$(NAME)
+
 test:
 	cd $(MAKEPATH); go test -v
 
