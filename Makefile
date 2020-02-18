@@ -4,7 +4,8 @@ NAME:=statusctl
 help:
 	@echo View the Makefile targets for usage.
 
-# Development targets.
+test:
+	cd $(MAKEPATH); go test -v
 
 build: clean
 	cd $(MAKEPATH); go build -o $(NAME) .
@@ -18,8 +19,6 @@ clean:
 
 tidy:
 	cd $(MAKEPATH); go mod tidy
-
-# Installation targets.
 
 install:
 	sudo mv $(MAKEPATH)/$(NAME) /usr/local/bin/

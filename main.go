@@ -13,13 +13,15 @@ package main
 
 import (
 	"fmt"
-	"github.com/spf13/cobra"
-	git "gopkg.in/src-d/go-git.v4"
-	yaml "gopkg.in/yaml.v3"
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
+
+	cobra "github.com/spf13/cobra"
+	git "gopkg.in/src-d/go-git.v4"
+	yaml "gopkg.in/yaml.v3"
 )
 
 // This is the base command, "statusctl", when called without any subcommands.
@@ -130,6 +132,7 @@ func listAction() {
 // fails, the error is unknown since the previous function should have caught most known errors.
 // Finally, we will utilize the result (bool) to determine whether or not the repository is clean.
 func printStatus(repos []string) {
+	var waitGroup sync.WaitGroup
 	results := [4]string{
 		"CLEAN    ",
 		"UNCLEAN  ",
@@ -137,32 +140,37 @@ func printStatus(repos []string) {
 		"UNKNOWN  ",
 	}
 	for _, repoPath := range repos {
-		repoPath, err := filepath.Abs(repoPath)
-		if err != nil {
-			fmt.Printf("  %s%s: %v\n", results[3], repoPath, err)
-			return
-		}
-		GitRepo, err := git.PlainOpen(repoPath)
-		if err != nil {
-			fmt.Printf("  %s%s\n", results[2], repoPath)
-			return
-		}
-		GitWorktree, err := GitRepo.Worktree()
-		if err != nil {
-			fmt.Printf("  %s%s: %v\n", results[3], repoPath, err)
-			return
-		}
-		GitStatus, err := GitWorktree.Status()
-		if err != nil {
-			fmt.Printf("  %s%s: %v\n", results[3], repoPath, err)
-			return
-		}
-		if GitStatus.IsClean() {
-			fmt.Printf("  %s%s\n", results[0], repoPath)
-		} else {
-			fmt.Printf("  %s%s\n", results[1], repoPath)
-		}
+		waitGroup.Add(1)
+		go func(repoPath string) {
+			defer waitGroup.Done()
+			repoPath, err := filepath.Abs(repoPath)
+			if err != nil {
+				fmt.Printf("  %s%s: %v\n", results[3], repoPath, err)
+				return
+			}
+			GitRepo, err := git.PlainOpen(repoPath)
+			if err != nil {
+				fmt.Printf("  %s%s\n", results[2], repoPath)
+				return
+			}
+			GitWorktree, err := GitRepo.Worktree()
+			if err != nil {
+				fmt.Printf("  %s%s: %v\n", results[3], repoPath, err)
+				return
+			}
+			GitStatus, err := GitWorktree.Status()
+			if err != nil {
+				fmt.Printf("  %s%s: %v\n", results[3], repoPath, err)
+				return
+			}
+			if GitStatus.IsClean() {
+				fmt.Printf("  %s%s\n", results[0], repoPath)
+			} else {
+				fmt.Printf("  %s%s\n", results[1], repoPath)
+			}
+		}(repoPath)
 	}
+	waitGroup.Wait()
 }
 
 // This is the primary function for the run command. First, this function creates the config file
