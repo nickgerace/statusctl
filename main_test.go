@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// Test the runAction function.
 func TestRun(t *testing.T) {
 
 	// Begin test duration timer and suppress STDOUT.

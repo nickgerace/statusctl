@@ -12,6 +12,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -19,52 +20,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	cobra "github.com/spf13/cobra"
 	git "gopkg.in/src-d/go-git.v4"
 	yaml "gopkg.in/yaml.v3"
 )
-
-// This is the base command, "statusctl", when called without any subcommands.
-var rootCmd = &cobra.Command{
-	Use:   "statusctl",
-	Short: "CLI tool to keep track of your Git repositories.",
-	Long: `
-CLI tool to keep track of your Git repositories.
-
-It leverages the configuration YAML file ($HOME/.config/statusctl/config.yaml) in order to know
-which repositories to target.
-
-The file is split into "collections" and "repositories", containing arrays of paths. Each entry in
-"collections" is a path to a collection of Git repositories. Each entry in "repositories" is a
-path to an individual Git repository.`,
-}
-
-// List all targets to check status against.
-var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "This subcommand lists the contents of the configuration file.",
-	Long: `
-This subcommand lists the contents of the configuration file ($HOME/.config/statusctl/config.yaml).
-
-It loads the file contents into the struct for validation. Then, the struct contents are displayed
-to screen.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		listAction()
-	},
-}
-
-// Run againsts all targets in the config YAML file.
-var runCmd = &cobra.Command{
-	Use:   "run",
-	Short: "This subcommand starts the primary program: checking Git status for all targets.",
-	Long: `
-This subcommand starts the primary program: checking Git status for all targets.
-	
-It looks for the configuration file ($HOME/.config/statusctl/config.yaml) and runs against it.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		runAction()
-	},
-}
 
 // Config struct for yaml files. Only look for collections of Git repositories and individual Git
 // repositories. The "omitempty" option allows for the objects to be empty.
@@ -73,19 +31,34 @@ type Config struct {
 	Repositories []string `yaml:"repositories,omitempty"`
 }
 
+// Help message displaying whenever the flag.Usage() function is overridden.
+var help string = (`
+Statusctl
+https://github.com/nickgerace/statusctl
+
+description:
+  CLI tool to keep track of your Git repositories. It leverages the configuration YAML file
+  ($HOME/.config/statusctl/config.yaml) in order to know which repositories to target.
+
+config file:
+  The file is split into *collections* and *repositories* containing arrays of paths. Each entry in
+  *collections* is a path to a collection of Git repositories. Each entry in *repositories* is a path
+  to an individual Git repository.
+
+usage:
+`)
+
 // Open the file and load the config into the struct for usage. We need a pointer to the config
 // object to store the unmarhsaled data. The config file can only be in one location. First, we
 // load the config file contents into bytestream. Then, we unmarshall the raw data into the
 // config struct.
 func (config *Config) load() {
 	data, err := ioutil.ReadFile(path.Join(os.Getenv("HOME"), ".config", "statusctl", "config.yaml"))
-	handle(err)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 	err = yaml.Unmarshal(data, &config)
-	handle(err)
-}
-
-// Handles errors efficiently in one line. Exit with status code "1" after the error is displayed.
-func handle(err error) {
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -99,9 +72,15 @@ func createConfigIfNotExist() {
 	configDirectory := path.Join(os.Getenv("HOME"), ".config", "statusctl")
 	if _, err := os.Stat(path.Join(configDirectory, "config.yaml")); err != nil {
 		err = os.MkdirAll(configDirectory, os.ModePerm)
-		handle(err)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
 		_, err = os.Create(path.Join(configDirectory, "config.yaml"))
-		handle(err)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 }
@@ -187,12 +166,18 @@ func runAction() {
 	fmt.Printf("\ncollections:\n")
 	for _, collection := range config.Collections {
 		collectionSubDirs, err := ioutil.ReadDir(collection)
-		handle(err)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
 		subDirPaths := []string{}
 		for _, subDir := range collectionSubDirs {
 			subDirPath := path.Join(collection, subDir.Name())
 			subDirPath, err = filepath.Abs(subDirPath)
-			handle(err)
+			if err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
 			subDirPaths = append(subDirPaths, subDirPath)
 		}
 		printStatus(subDirPaths)
@@ -202,16 +187,28 @@ func runAction() {
 	fmt.Printf("\n")
 }
 
-// Setup all subcommands.
-func init() {
-	rootCmd.AddCommand(listCmd)
-	rootCmd.AddCommand(runCmd)
-}
-
-// Execute the root Cobra command.
+// Execute the main flag commands.
 func main() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+	var run = flag.Bool("r", false, "run the main program: checking Git status for all collections and repositories")
+	var list = flag.Bool("l", false, "list the contents of the configuration file ($HOME/.config/statusctl/config.yaml)")
+	flag.Usage = func() {
+		fmt.Printf(help)
+		flag.PrintDefaults()
+		fmt.Printf("\n")
+		os.Exit(0)
+	}
+	flag.Parse()
+	if (*run == false) && (*list == false) {
+		flag.Usage()
+	}
+	if (*run == true) && (*list == true) {
+		fmt.Printf("Cannot use more than one flag. Printing help message...\n")
+		flag.Usage()
+	}
+	if *run == true {
+		runAction()
+	}
+	if *list == true {
+		listAction()
 	}
 }
