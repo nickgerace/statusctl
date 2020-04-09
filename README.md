@@ -1,3 +1,8 @@
+# DEPRECATED
+
+This repository has been archived.
+Check out its replacement, [gfold](https://github.com/nickgerace/gfold).
+
 # Statusctl
 
 **created and maintained by: [Nick Gerace](https://nickgerace.dev)**
